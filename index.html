@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Silo de Amendoim - Monitor</title>
+    <style>
+        :root {
+            --bg-color: #1e1e2f;
+            --card-bg: #2a2a40;
+            --text-color: #ffffff;
+            --text-muted: #a0a0b5;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 {
+            margin-bottom: 5px;
+        }
+
+        p.subtitle {
+            color: var(--text-muted);
+            margin-top: 0;
+            margin-bottom: 30px;
+        }
+
+        .dashboard {
+            display: flex;
+            gap: 40px;
+            flex-wrap: wrap;
+            justify-content: center;
+            max-width: 800px;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+            text-align: center;
+            min-width: 250px;
+        }
+
+        /* Estilos do Termômetro / Silo */
+        .silo-container {
+            width: 100px;
+            height: 350px;
+            background: #111;
+            border-radius: 10px 10px 50px 50px;
+            margin: 20px auto;
+            position: relative;
+            border: 4px solid #555;
+            overflow: hidden;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
+        }
+
+        .silo-fill {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 0%;
+            background: #4caf50;
+            transition: height 0.8s ease-out, background 0.8s ease-out;
+        }
+
+        .value {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin: 15px 0 5px 0;
+        }
+
+        .unit {
+            font-size: 0.4em;
+            color: var(--text-muted);
+        }
+
+        .record-value {
+            font-size: 2em;
+            color: #4caf50;
+            font-weight: bold;
+            margin: 15px 0;
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background-color: #ff3333;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .online { background-color: #4caf50; }
+    </style>
+</head>
+<body>
+
+    <h1>Monitor do Silo</h1>
+    <p class="subtitle"><span id="status-indicator" class="status-dot"></span><span id="status-text">Aguardando conexão...</span></p>
+
+    <div class="dashboard">
+        <!-- Card 1: Nível Atual -->
+        <div class="card">
+            <h3>Nível em Tempo Real</h3>
+            <div class="silo-container">
+                <div id="fill" class="silo-fill"></div>
+            </div>
+            <div class="value"><span id="dist">--</span><span class="unit"> cm</span></div>
+            <p style="color: var(--text-muted); font-size: 0.9em;">Sensor ao topo</p>
+        </div>
+
+        <!-- Card 2: Painel Evolutivo -->
+        <div class="card">
+            <h3>Recorde do Dia</h3>
+            <p style="color: var(--text-muted); font-size: 0.9em;">Silo mais cheio (Menor distância)</p>
+            
+            <div class="record-value"><span id="min-dist">--</span><span class="unit"> cm</span></div>
+            <p id="min-time" style="color: var(--text-muted); font-size: 0.9em;">Registrado às --:--</p>
+            
+            <hr style="border: 1px solid #444; margin: 20px 0;">
+            
+            <p style="font-size: 0.85em; color: #888;">
+                O cálculo é redefinido automaticamente todo dia à meia-noite.
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // === COLOQUE A URL DO SEU FIREBASE AQUI ===
+        const FIREBASE_URL = 'https://SEU-PROJETO-default-rtdb.firebaseio.com/silo_amendoim.json';
+        
+        const distEl = document.getElementById('dist');
+        const fillEl = document.getElementById('fill');
+        const minDistEl = document.getElementById('min-dist');
+        const minTimeEl = document.getElementById('min-time');
+        const statusInd = document.getElementById('status-indicator');
+        const statusText = document.getElementById('status-text');
+
+        // Limites do Silo
+        const DIST_MINIMA = 30;  // 30cm (Silo Cheio = Verde)
+        const DIST_MAXIMA = 400; // 400cm (Silo Vazio = Vermelho)
+
+        function atualizarPainelEvolutivo(distAtual) {
+            const hoje = new Date().toLocaleDateString();
+            let dadosSalvos = JSON.parse(localStorage.getItem('siloRecordeDiario'));
+
+            // Se mudou de dia ou não tem dados, reseta o recorde
+            if (!dadosSalvos || dadosSalvos.data !== hoje) {
+                dadosSalvos = {
+                    data: hoje,
+                    min_dist: distAtual,
+                    hora: new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})
+                };
+            } 
+            // Se encontrou uma distância menor (silo mais cheio) no mesmo dia
+            else if (distAtual < dadosSalvos.min_dist) {
+                dadosSalvos.min_dist = distAtual;
+                dadosSalvos.hora = new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'});
+            }
+
+            localStorage.setItem('siloRecordeDiario', JSON.stringify(dadosSalvos));
+
+            minDistEl.innerText = dadosSalvos.min_dist.toFixed(1);
+            minTimeEl.innerText = "Registrado às " + dadosSalvos.hora;
+        }
+
+        function buscarDados() {
+            fetch(FIREBASE_URL)
+                .then(res => res.json())
+                .then(data => {
+                    if (data && data.distancia_cm !== undefined) {
+                        let d = data.distancia_cm;
+                        
+                        // Atualiza textos e status
+                        distEl.innerText = d.toFixed(1);
+                        statusInd.className = 'status-dot online';
+                        statusText.innerText = 'Online - Última leitura: ' + new Date().toLocaleTimeString();
+                        
+                        // Lógica visual de preenchimento (Invertida: Menor distância = Maior preenchimento)
+                        // Limita o valor entre 30 e 400 para o cálculo
+                        let dLimitado = Math.max(DIST_MINIMA, Math.min(d, DIST_MAXIMA));
+                        
+                        // Calcula porcentagem (400cm = 0%, 30cm = 100%)
+                        let percentual = ((DIST_MAXIMA - dLimitado) / (DIST_MAXIMA - DIST_MINIMA)) * 100;
+                        fillEl.style.height = percentual + '%';
+
+                        // Lógica de cores HSL (0 = Vermelho, 120 = Verde)
+                        // Quanto maior o percentual de preenchimento, mais verde.
+                        let hue = (percentual / 100) * 120; 
+                        fillEl.style.background = `hsl(${hue}, 100%, 45%)`;
+
+                        // Atualiza o painel de recorde
+                        atualizarPainelEvolutivo(d);
+                    }
+                })
+                .catch(err => {
+                    console.error("Erro ao ler Firebase:", err);
+                    statusInd.className = 'status-dot';
+                    statusText.innerText = 'Desconectado da API';
+                });
+        }
+
+        // Busca assim que abre a página, e depois a cada 5 segundos
+        buscarDados();
+        setInterval(buscarDados, 5000);
+    </script>
+</body>
+</html>
